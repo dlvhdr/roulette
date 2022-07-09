@@ -6,33 +6,40 @@ import (
 )
 
 func (m Model) printDebugInfo() string {
+	middle := (m.height / 2)
+	currPos := (middle + m.currRoll) % m.height
+	finalPos := (middle + m.totalRolls) % m.height
+	itemsPassed := (finalPos / itemHeight)
+	winner := m.options[len(m.options)-1-itemsPassed]
 	return fmt.Sprintf(
-		"%v\nPos: %v, Vel: %v\nRoll: %v, Equalibrium Pos: %v\nResIdx: %v\nCurrIdx: %v, Current Value: %v\nMiddle: %v\nWinner: %v\n\n",
+		"%v\nPosition: %v, Velocity: %v\ncurrRoll: %v, totalRolls: %v\nwinnerIdx: %v, winner: %v\n\nheight: %v,finalPos: %v, middle: %v\nitemsPassed: %v,currPos: %v\n",
 		chars[m.projectToProgressBar()],
-		m.pos,
+		m.position,
 		m.velocity,
-		m.roll,
-		m.res,
-		m.res%len(m.options),
-		int(math.Min(float64(len(m.options))-1, float64(len(m.options)-(m.roll+len(m.options)/2)%len(m.options)))),
-		m.options[int(math.Min(float64(len(m.options))-1, float64(len(m.options)-(m.roll+len(m.options)/2)%len(m.options))))],
-		len(m.options)/2,
-		m.options[m.res%len(m.options)],
+		m.currRoll,
+		m.totalRolls,
+		m.winnerIdx,
+		winner,
+		m.height,
+		finalPos,
+		middle,
+		itemsPassed,
+		currPos,
 	)
 }
 
 func (m Model) projectToProgressBar() int {
 	input_start := 0.0
-	input_end := float64(m.res)
+	input_end := float64(m.totalRolls)
 	output_start := 0.0
 	output_end := math.Min(
 		math.Max(
 			0.0,
-			math.RoundToEven(float64(len(chars)/2))+float64(m.res)-m.pos,
+			math.RoundToEven(float64(len(chars)/2))+float64(m.totalRolls)-m.position,
 		),
 		float64(len(chars)-1),
 	)
 	slope := (output_end - output_start) / (input_end - input_start)
-	output := output_start + slope*(m.pos-input_start)
+	output := output_start + slope*(m.position-input_start)
 	return int(math.RoundToEven(output))
 }

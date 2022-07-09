@@ -15,42 +15,73 @@ import (
 )
 
 const (
-	maxHeight                = itemHeight * 5
+	maxHeight                = 100000
 	width                    = 30
 	fps                      = 60
 	epsilon          float64 = 0.5
 	angularFrequency         = 100.0
 	damping                  = 50.0
-	minSpins                 = 10
+	itemHeight               = 3
+	gameHeight               = 31
 )
 
 type Model struct {
 	title        string
 	options      []string
-	roll         int
+	currRoll     int
+	totalRolls   int
 	help         help.Model
 	spring       harmonica.Spring
 	velocity     float64
-	pos          float64
-	res          int
+	position     float64
 	dimmedLights bool
 	debug        bool
+	winnerIdx    int
+	height       int
+	middle       int
 }
 
 func InitialModel(title string, options []string, debug bool) Model {
 	rand.Seed(time.Now().UnixNano())
-	res := minSpins*len(options) + rand.Intn(minSpins*len(options))
+	numOptions := len(options)
+	winner := rand.Intn(numOptions)
+	optionsHeight := numOptions * itemHeight
+	minSpins := optionsHeight * 50
+	fmt.Printf("Winner: %v\n", options[winner])
+
+	var middle int
+	fmt.Printf("Options height: %v\n", optionsHeight)
+	if optionsHeight%2 != 0 {
+		middle = int(math.Floor(float64(optionsHeight) / 2.0))
+	} else {
+		middle = optionsHeight / 2
+	}
+	fmt.Printf("middle: %v\n", middle)
+
+	distanceToWinner := middle - winner*itemHeight
+	if winner >= middle {
+		distanceToWinner += optionsHeight
+	}
+	fmt.Printf("distanceToWinner: %v\n", distanceToWinner)
+	totalRolls := minSpins + distanceToWinner
+
+	// remainderRolls := minSpins % len(options)
+	// distanceToWinner := int(math.Abs(float64(len(options) - 1 - winner - remainderRolls)))
+	// totalRolls := minSpins + distanceToWinner
+
 	return Model{
 		title:        title,
 		options:      options,
-		roll:         0,
+		currRoll:     0,
 		help:         help.NewModel(),
 		spring:       harmonica.NewSpring(harmonica.FPS(fps), angularFrequency, damping),
 		velocity:     0.0,
-		pos:          0.0,
-		res:          res,
+		position:     0.0,
+		totalRolls:   totalRolls,
 		debug:        debug,
 		dimmedLights: false,
+		height:       13,
+		middle:       middle,
 	}
 }
 
@@ -65,7 +96,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 
 		case "enter":
-			if m.roll == 0 {
+			if m.currRoll == 0 {
 				return m, tea.Batch(m.flicker(), m.doRoll())
 			} else {
 				return m, nil
@@ -77,11 +108,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case rollMsg:
-		newPos, newVel := m.spring.Update(m.pos, m.velocity, float64(m.res))
+		newPos, newVel := m.spring.Update(m.position, m.velocity, float64(m.totalRolls))
 		m.velocity = newVel
-		m.roll = int(math.Round(newPos))
-		m.pos = newPos
-		if floatEquals(newPos, float64(m.res)) {
+		m.currRoll = int(math.Round(newPos))
+		m.position = newPos
+		if floatEquals(newPos, float64(m.totalRolls)) {
 			m.dimmedLights = false
 			return m, tea.Quit
 		}
@@ -100,25 +131,22 @@ func (m Model) View() string {
 	s.WriteString(m.renderTitle())
 	s.WriteString("\n")
 
-	options := m.renderOptions()
-	lights := m.renderLights(maxHeight)
-	// put pointers in a 2 height container with alighment based on number of items
-	game := lipgloss.NewStyle().Height(maxHeight).MaxHeight(maxHeight).Render(
-		lipgloss.JoinHorizontal(
-			lipgloss.Center,
-			lights,
-			pointerContainer.Render(" ▶ "),
-			options,
-			pointerContainer.Render("  "),
-			lights,
-		),
+	options := lipgloss.PlaceVertical(gameHeight, lipgloss.Center, m.renderOptions())
+	lights := m.renderLights()
+	game := lipgloss.JoinHorizontal(
+		lipgloss.Center,
+		lights,
+		pointerContainer.Render(" ▶ "),
+		options,
+		pointerContainer.Render("  "),
+		lights,
 	)
 	s.WriteString(game)
 	s.WriteString("\n\n")
 
-	if m.debug {
-		s.WriteString(m.printDebugInfo())
-	}
+	// if m.debug {
+	// 	s.WriteString(m.printDebugInfo())
+	// }
 
 	s.WriteString(m.help.ShortHelpView(keys.ShortHelp()))
 	s.WriteString("\n")
@@ -142,9 +170,9 @@ type flickerMsg struct{}
 
 type rollMsg time.Time
 
-func (m Model) renderLights(height int) string {
-	lights := make([]string, height)
-	for i := 0; i < height; i++ {
+func (m Model) renderLights() string {
+	lights := make([]string, gameHeight)
+	for i := 0; i < gameHeight; i++ {
 		var light string
 		if m.dimmedLights {
 			light = "⚬"
@@ -171,15 +199,39 @@ func (m Model) renderTitle() string {
 
 func (m Model) renderOptions() string {
 	rendered := make([]string, len(m.options))
-	for i := range m.options {
-		option := m.options[i]
-		newIdx := (i + m.roll) % len(m.options)
+	for i, option := range m.options {
 		color := lipgloss.Color(colors[i])
 		container := optionContainer.Copy().Background(color).BorderBackground(color)
-		rendered[newIdx] = container.Render(fmt.Sprintf("%s", option))
+		// if option == m.calcWinner() {
+		// 	container.Border(lipgloss.NormalBorder())
+		// }
+		rendered[i] = container.Render(fmt.Sprintf("%s", option))
+	}
+	joined := lipgloss.JoinVertical(lipgloss.Center, rendered...)
+	split := strings.Split(joined, "\n")
+
+	final := make([]string, len(split))
+	for i := range split {
+		final[(i+m.currRoll)%len(split)] = split[i]
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Center, rendered...)
+	numbers := make([]string, len(m.options)*itemHeight)
+	for i := 0; i < len(m.options); i++ {
+		for j := 0; j < itemHeight; j++ {
+			idx := i*itemHeight + j
+			if idx < m.middle {
+				numbers[idx] = fmt.Sprintf("%d", idx-m.middle)
+			} else if idx == m.middle {
+				numbers[idx] = fmt.Sprint("0")
+			} else {
+				numbers[idx] = fmt.Sprintf("%d", idx-m.middle)
+			}
+		}
+	}
+	allNumbers := lipgloss.JoinVertical(lipgloss.Center, numbers...)
+	allOptions := lipgloss.JoinVertical(lipgloss.Center, final...)
+
+	return lipgloss.JoinHorizontal(lipgloss.Left, allNumbers, allOptions)
 }
 
 type keyMap struct {
@@ -207,4 +259,12 @@ func floatEquals(a, b float64) bool {
 		return true
 	}
 	return false
+}
+
+func (m Model) calcWinner() string {
+	middle := (m.height / 2)
+	finalPos := (middle + m.totalRolls) % m.height
+	itemsPassed := (finalPos / itemHeight)
+	winner := m.options[len(m.options)-1-itemsPassed]
+	return winner
 }

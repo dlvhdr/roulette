@@ -2,13 +2,11 @@ package app
 
 import "github.com/charmbracelet/lipgloss"
 
-const itemHeight = 3
-
 var (
 	optionContainer = lipgloss.NewStyle().
 			Width(20).
-			Border(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("0")).
+			Height(itemHeight).
+			Padding(1, 0).
 			Foreground(lipgloss.Color("0")).
 			Align(lipgloss.Center)
 
