@@ -15,73 +15,58 @@ import (
 )
 
 const (
-	maxHeight                = 100000
-	width                    = 30
-	fps                      = 60
-	epsilon          float64 = 0.5
-	angularFrequency         = 100.0
-	damping                  = 50.0
-	itemHeight               = 3
-	gameHeight               = 31
+	fps              = 60
+	angularFrequency = 100.0
+	damping          = 50.0
+	stepsMultiplier  = 50
 )
 
 type Model struct {
-	title        string
-	options      []string
-	currRoll     int
-	totalRolls   int
-	help         help.Model
-	spring       harmonica.Spring
-	velocity     float64
-	position     float64
-	dimmedLights bool
-	debug        bool
-	winnerIdx    int
-	height       int
-	middle       int
+	title          string
+	options        []string
+	currStep       int
+	totalSteps     int
+	spring         harmonica.Spring
+	velocity       float64
+	position       float64
+	lightsOn       bool
+	middlePosition int
+	winnerIdx      int
+	showWinner     bool
+	help           help.Model
+	debug          bool
 }
 
 func InitialModel(title string, options []string, debug bool) Model {
 	rand.Seed(time.Now().UnixNano())
 	numOptions := len(options)
-	winner := rand.Intn(numOptions)
+	winnerIdx := rand.Intn(numOptions)
+
 	optionsHeight := numOptions * itemHeight
-	minSpins := optionsHeight * 50
-	fmt.Printf("Winner: %v\n", options[winner])
+	minSteps := optionsHeight * stepsMultiplier
 
 	var middle int
-	fmt.Printf("Options height: %v\n", optionsHeight)
 	if optionsHeight%2 != 0 {
 		middle = int(math.Floor(float64(optionsHeight) / 2.0))
 	} else {
 		middle = optionsHeight / 2
 	}
-	fmt.Printf("middle: %v\n", middle)
 
-	distanceToWinner := middle - winner*itemHeight
-	if winner >= middle {
+	distanceToWinner := middle - winnerIdx*itemHeight
+	if winnerIdx >= middle {
 		distanceToWinner += optionsHeight
 	}
-	fmt.Printf("distanceToWinner: %v\n", distanceToWinner)
-	totalRolls := minSpins + distanceToWinner
-
-	// remainderRolls := minSpins % len(options)
-	// distanceToWinner := int(math.Abs(float64(len(options) - 1 - winner - remainderRolls)))
-	// totalRolls := minSpins + distanceToWinner
+	totalSteps := minSteps + distanceToWinner
 
 	return Model{
-		title:        title,
-		options:      options,
-		currRoll:     0,
-		help:         help.NewModel(),
-		spring:       harmonica.NewSpring(harmonica.FPS(fps), angularFrequency, damping),
-		velocity:     0.0,
-		position:     0.0,
-		totalRolls:   totalRolls,
-		debug:        debug,
-		dimmedLights: false,
-		height:       13,
-		middle:       middle,
+		title:          title,
+		options:        options,
+		totalSteps:     totalSteps,
+		debug:          debug,
+		middlePosition: middle,
+		winnerIdx:      winnerIdx,
+		spring:         harmonica.NewSpring(harmonica.FPS(fps), angularFrequency, damping),
+		help:           help.NewModel(),
 	}
 }
 
@@ -96,10 +81,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 
 		case "enter":
-			if m.currRoll == 0 {
+			if m.currStep == 0 {
 				return m, tea.Batch(m.flicker(), m.doRoll())
 			} else {
-				return m, nil
+				m.currStep = m.totalSteps
+				m.showWinner = true
+				return m, tea.Quit
 			}
 
 		case "ctrl+c", "q":
@@ -107,20 +94,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		}
 
+	case stopGame:
+		m.showWinner = true
+		return m, tea.Quit
+
 	case rollMsg:
-		newPos, newVel := m.spring.Update(m.position, m.velocity, float64(m.totalRolls))
+		newPos, newVel := m.spring.Update(m.position, m.velocity, float64(m.totalSteps))
 		m.velocity = newVel
-		m.currRoll = int(math.Round(newPos))
+		m.currStep = int(math.Round(newPos))
 		m.position = newPos
-		if floatEquals(newPos, float64(m.totalRolls)) {
-			m.dimmedLights = false
-			return m, tea.Quit
+		if floatEquals(newPos, float64(m.totalSteps)) {
+			m.lightsOn = true
+			m.showWinner = true
+			return m, tea.Batch(m.flashWinner(), m.quit())
 		}
 		return m, m.doRoll()
 
-	case flickerMsg:
-		m.dimmedLights = !m.dimmedLights
+	case flickerLightsMsg:
+		m.lightsOn = !m.lightsOn
 		return m, m.flicker()
+
+	case flashWinner:
+		m.showWinner = !m.showWinner
+		return m, m.flashWinner()
+
 	}
 
 	return m, nil
@@ -131,22 +128,18 @@ func (m Model) View() string {
 	s.WriteString(m.renderTitle())
 	s.WriteString("\n")
 
-	options := lipgloss.PlaceVertical(gameHeight, lipgloss.Center, m.renderOptions())
+	options := m.renderOptions()
 	lights := m.renderLights()
-	game := lipgloss.JoinHorizontal(
+	game := lipgloss.PlaceHorizontal(gameWidth, lipgloss.Center, lipgloss.JoinHorizontal(
 		lipgloss.Center,
 		lights,
 		pointerContainer.Render(" ▶ "),
 		options,
 		pointerContainer.Render("  "),
 		lights,
-	)
+	))
 	s.WriteString(game)
 	s.WriteString("\n\n")
-
-	// if m.debug {
-	// 	s.WriteString(m.printDebugInfo())
-	// }
 
 	s.WriteString(m.help.ShortHelpView(keys.ShortHelp()))
 	s.WriteString("\n")
@@ -162,11 +155,11 @@ func (m Model) doRoll() tea.Cmd {
 
 func (m Model) flicker() tea.Cmd {
 	return tea.Tick(time.Second/4, func(t time.Time) tea.Msg {
-		return flickerMsg{}
+		return flickerLightsMsg{}
 	})
 }
 
-type flickerMsg struct{}
+type flickerLightsMsg struct{}
 
 type rollMsg time.Time
 
@@ -174,10 +167,10 @@ func (m Model) renderLights() string {
 	lights := make([]string, gameHeight)
 	for i := 0; i < gameHeight; i++ {
 		var light string
-		if m.dimmedLights {
-			light = "⚬"
+		if m.lightsOn {
+			light = "✦"
 		} else {
-			light = "●"
+			light = "✧"
 		}
 		lights[i] = lipgloss.NewStyle().Foreground(lipgloss.Color("#e0af68")).Render(light)
 	}
@@ -191,47 +184,48 @@ func (m Model) renderTitle() string {
 	}
 
 	return lipgloss.PlaceHorizontal(
-		width,
+		gameWidth,
 		lipgloss.Center,
 		titleContainer.Render(m.title),
 	)
 }
 
 func (m Model) renderOptions() string {
-	rendered := make([]string, len(m.options))
+	renderedOptions := make([]string, len(m.options))
 	for i, option := range m.options {
 		color := lipgloss.Color(colors[i])
 		container := optionContainer.Copy().Background(color).BorderBackground(color)
-		// if option == m.calcWinner() {
-		// 	container.Border(lipgloss.NormalBorder())
-		// }
-		rendered[i] = container.Render(fmt.Sprintf("%s", option))
-	}
-	joined := lipgloss.JoinVertical(lipgloss.Center, rendered...)
-	split := strings.Split(joined, "\n")
-
-	final := make([]string, len(split))
-	for i := range split {
-		final[(i+m.currRoll)%len(split)] = split[i]
-	}
-
-	numbers := make([]string, len(m.options)*itemHeight)
-	for i := 0; i < len(m.options); i++ {
-		for j := 0; j < itemHeight; j++ {
-			idx := i*itemHeight + j
-			if idx < m.middle {
-				numbers[idx] = fmt.Sprintf("%d", idx-m.middle)
-			} else if idx == m.middle {
-				numbers[idx] = fmt.Sprint("0")
-			} else {
-				numbers[idx] = fmt.Sprintf("%d", idx-m.middle)
-			}
+		if i == m.winnerIdx && m.showWinner {
+			container = container.
+				Border(lipgloss.ThickBorder()).
+				Padding(0, 0).
+				Height(1).
+				Width(itemWidth - 2)
 		}
+		renderedOptions[i] = container.Render(fmt.Sprintf("%s", option))
 	}
-	allNumbers := lipgloss.JoinVertical(lipgloss.Center, numbers...)
-	allOptions := lipgloss.JoinVertical(lipgloss.Center, final...)
+	optionsRows := strings.Split(
+		lipgloss.JoinVertical(
+			lipgloss.Center,
+			renderedOptions...,
+		),
+		"\n",
+	)
 
-	return lipgloss.JoinHorizontal(lipgloss.Left, allNumbers, allOptions)
+	optionsViewport := make([]string, len(optionsRows))
+	for i := range optionsRows {
+		optionsViewport[(i+m.currStep)%len(optionsRows)] = optionsRows[i]
+	}
+
+	halfGameHeight := gameHeight / 2
+	low := Max(0, m.middlePosition-halfGameHeight)
+	high := Min(len(optionsViewport), m.middlePosition+halfGameHeight+1)
+	optionsViewport = optionsViewport[low:high]
+	return lipgloss.PlaceVertical(
+		gameHeight,
+		lipgloss.Center,
+		lipgloss.JoinVertical(lipgloss.Center, optionsViewport...),
+	)
 }
 
 type keyMap struct {
@@ -242,11 +236,11 @@ type keyMap struct {
 var keys = keyMap{
 	Roll: key.NewBinding(
 		key.WithKeys("Enter"),
-		key.WithHelp("Enter", "Roll"),
+		key.WithHelp("Enter", "Roll/Speed Up"),
 	),
 	Quit: key.NewBinding(
 		key.WithKeys("q", "ctrl+c"),
-		key.WithHelp("q/ctrl+c", "Stop the roll"),
+		key.WithHelp("q/ctrl+c", "Quit"),
 	),
 }
 
@@ -254,17 +248,19 @@ func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{keys.Roll, keys.Quit}
 }
 
-func floatEquals(a, b float64) bool {
-	if (a-b) < epsilon && (b-a) < epsilon {
-		return true
+func (m Model) quit() tea.Cmd {
+	return func() tea.Msg {
+		time.Sleep(2 * time.Second)
+		return stopGame{}
 	}
-	return false
 }
 
-func (m Model) calcWinner() string {
-	middle := (m.height / 2)
-	finalPos := (middle + m.totalRolls) % m.height
-	itemsPassed := (finalPos / itemHeight)
-	winner := m.options[len(m.options)-1-itemsPassed]
-	return winner
+func (m Model) flashWinner() tea.Cmd {
+	return tea.Tick(time.Second/4, func(t time.Time) tea.Msg {
+		return flashWinner{}
+	})
 }
+
+type flashWinner struct{}
+
+type stopGame struct{}

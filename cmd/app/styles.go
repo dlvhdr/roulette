@@ -2,12 +2,20 @@ package app
 
 import "github.com/charmbracelet/lipgloss"
 
+const (
+	gameWidth  = 30
+	gameHeight = 13
+	itemHeight = 3
+	itemWidth  = 20
+)
+
 var (
 	optionContainer = lipgloss.NewStyle().
-			Width(20).
+			Width(itemWidth).
 			Height(itemHeight).
 			Padding(1, 0).
 			Foreground(lipgloss.Color("0")).
+			BorderForeground(lipgloss.Color("0")).
 			Align(lipgloss.Center)
 
 	titleContainer = lipgloss.NewStyle().Bold(true).Padding(1, 0)
