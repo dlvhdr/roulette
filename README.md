@@ -6,4 +6,6 @@ Just a fun [Bubbletea](https://github.com/charmbracelet/bubbletea) + [Harmonica]
 
 # Usage
 
-alias dinner="go run . -o=🍕,🍔,🥓,🌯,🥒,🍗 --title=\"What's for dinner?\""
+```sh
+go run . -o=🍕,🍔,🥓,🌯,🥒,🍗 --title="What's for dinner?"
+```
