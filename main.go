@@ -1,11 +1,14 @@
-/*
-Copyright © 2022 NAME HERE <EMAIL ADDRESS>
-
-*/
 package main
 
-import "github.com/dlvhdr/roulette/cmd"
+import (
+	"os"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 func main() {
-	cmd.Execute()
+	p := tea.NewProgram(InitialModel(os.Args[1:]))
+	if err := p.Start(); err != nil {
+		os.Exit(1)
+	}
 }
