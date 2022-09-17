@@ -6,14 +6,14 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dlvhdr/random-picker/cmd/app"
+	"github.com/dlvhdr/roulette/cmd/app"
 	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
-	Use:     "random-picker",
+	Use:     "roulette",
 	Short:   "Pick randomly from an arbitrary list of items",
-	Long:    `Provide a list of items and random-picker will pick one of them randomly.`,
+	Long:    `Provide a list of items and Roulette will pick one of them randomly.`,
 	Example: `choose -t "What's for dinner?" 🍕,🍔,🥓,🥦,🌯,🥩`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		title, err := cmd.Flags().GetString("title")

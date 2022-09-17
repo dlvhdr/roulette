@@ -1,4 +1,4 @@
-module github.com/dlvhdr/random-picker
+module github.com/dlvhdr/roulette
 
 go 1.18
 
